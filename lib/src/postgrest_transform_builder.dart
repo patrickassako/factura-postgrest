@@ -39,10 +39,17 @@ class PostgrestTransformBuilder<T> extends RawPostgrestBuilder<T, T, T> {
     final newHeaders = {..._headers};
 
     final url = overrideSearchParams('select', cleanedColumns);
-    if (newHeaders['Prefer'] != null) {
-      newHeaders['Prefer'] = '${newHeaders['Prefer']},';
-    }
-    newHeaders['Prefer'] = '${newHeaders['Prefer']}return=representation';
+    // `insert()`, `update()` et `delete()` initialisent `Prefer` a la chaine
+    // VIDE (et non a `null`). Le test `!= null` etait donc toujours vrai et
+    // produisait l'en-tete `Prefer: ,return=representation` : une virgule en
+    // tete, que PostgREST rejette avec
+    // `400 PGRST100 failed to parse Prefer header`.
+    // On n'ajoute la virgule que si un `Prefer` non vide est deja present.
+    final prefer = newHeaders['Prefer'];
+    newHeaders['Prefer'] = [
+      if (prefer != null && prefer.isNotEmpty) prefer,
+      'return=representation',
+    ].join(',');
     return PostgrestTransformBuilder<PostgrestList>(
       _copyWithType(
         url: url,
@@ -97,7 +104,26 @@ class PostgrestTransformBuilder<T> extends RawPostgrestBuilder<T, T, T> {
   ///   .select('messages(*)')
   ///   .limit(1, referencedTable: 'messages');
   /// ```
+  /// Vrai pour une requete d'ecriture (POST, PATCH, DELETE).
+  bool get _isMutationMethod {
+    final method = _method?.toUpperCase();
+    return method != null && method != 'GET' && method != 'HEAD';
+  }
+
   PostgrestTransformBuilder<T> limit(int count, {String? referencedTable}) {
+    // PostgREST refuse `limit`/`offset` sur les mutations (POST, PATCH, DELETE)
+    // avec l'erreur PGRST114 « limit/offset querystring parameters are not
+    // allowed for PUT ». Or le code genere par FlutterFlow
+    // (`lib/backend/postgres/database/table.dart`) appelle systematiquement
+    // `.insert(data).select().limit(1).single()` — et idem pour `upsert` — ce
+    // qui faisait echouer TOUTE ecriture de l'application.
+    //
+    // Sur une mutation, `limit` ne borne que les lignes *renvoyees* : l'omettre
+    // ne change rien au resultat (une insertion produit une ligne) et rend la
+    // requete acceptable par PostgREST. On ne touche pas aux limites de tables
+    // imbriquees (`referencedTable`), qui appartiennent au SELECT embarque.
+    if (referencedTable == null && _isMutationMethod) return this;
+
     final key = referencedTable == null ? 'limit' : '$referencedTable.limit';
 
     final url = appendSearchParams(key, '$count');
@@ -123,6 +149,10 @@ class PostgrestTransformBuilder<T> extends RawPostgrestBuilder<T, T, T> {
   /// ```
   PostgrestTransformBuilder<T> range(int from, int to,
       {String? referencedTable}) {
+    // Meme contrainte que `limit` ci-dessus : PostgREST refuse offset/limit
+    // sur les mutations (PGRST114).
+    if (referencedTable == null && _isMutationMethod) return this;
+
     final keyOffset =
         referencedTable == null ? 'offset' : '$referencedTable.offset';
     final keyLimit =
