@@ -1,0 +1,24 @@
+name: postgrest
+description: >-
+  FORK of postgrest 2.4.2 for Factura. Adds the Supabase stream-builder types
+  that FlutterFlow's generated Postgres backend references, accepts a
+  positional `url` in PostgrestQueryBuilder, and exposes
+  `PostgrestClient.schema` as a getter. See FORK_NOTES.md.
+version: 2.4.2
+homepage: 'https://supabase.com'
+repository: 'https://github.com/supabase/supabase-flutter/tree/main/packages/postgrest'
+documentation: 'https://supabase.com/docs/reference/dart/select'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  http: '>=0.13.0 <2.0.0'
+  yet_another_json_isolate: 2.1.0
+  meta: ^1.9.1
+  logging: ^1.2.0
+
+dev_dependencies:
+  collection: ^1.16.0
+  lints: ^3.0.0
+  test: ^1.21.4
